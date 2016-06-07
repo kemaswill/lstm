@@ -221,6 +221,10 @@ local function run_test()
   g_enable_dropout(model.rnns)
 end
 
+local function save_model(path, model)
+  torch.save(path, model)
+end
+
 local function main()
   g_init_gpu(arg)
   state_train = {data=transfer_data(ptb.traindataset(params.batch_size))}
@@ -275,6 +279,42 @@ local function main()
   end
   run_test()
   print("Training is over.")
+  print('Save model')
+  save_model('model', model.rnns)
 end
 
-main()
+local function load_model_and_test()
+  setup()
+  model.rnns = torch.load('model')
+  
+  print("Network parameters:")
+  print(params)
+  
+  state_train = {data=transfer_data(ptb.traindataset(params.batch_size))}
+  state_valid =  {data=transfer_data(ptb.validdataset(params.batch_size))}
+  state_test =  {data=transfer_data(ptb.testdataset(params.batch_size))}
+  
+  local states = {state_train, state_valid, state_test}
+  --[[
+  for _, state in pairs(states) do
+    reset_state(state)
+  end
+  ]]--
+  g_disable_dropout(model.rnns)
+  local perp = 0
+  local len = state_valid.data:size(1)
+  print("len: " .. g_f3(len))
+  g_replace_table(model.s[0], model.start_s)
+  for i = 1, (len - 1) do
+    local x = state_valid.data[i]
+    local y = state_valid.data[i + 1]
+    perp_tmp, model.s[1] = unpack(model.rnns[1]:forward({x, y, model.s[0]}))
+    perp = perp + perp_tmp[1]
+    g_replace_table(model.s[0], model.s[1])
+  end
+  print("Test set perplexity : " .. g_f3(torch.exp(perp / (len - 1))))
+  g_enable_dropout(model.rnns)
+end
+
+load_model_and_test()
+--main()
